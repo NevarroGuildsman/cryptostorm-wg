@@ -1,0 +1,2 @@
+# Scripts must keep LF endings or they break inside the container.
+* text=auto eol=lf

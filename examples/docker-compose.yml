@@ -1,0 +1,74 @@
+# Example: cryptostorm-wg as the network for two qBittorrent instances.
+# Copy examples/.env.example to .env alongside this file and fill it in.
+
+services:
+  cryptostorm:
+    image: ghcr.io/nevarroguildsman/cryptostorm-wg:latest
+    container_name: cryptostorm
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.disable_ipv6=1
+    environment:
+      TZ: ${TZ}
+      PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
+      PSK: ${WIREGUARD_PRESHARED_KEY}
+      ADDRESS: ${WIREGUARD_ADDRESSES}
+      # Ordered list; 'auto' re-ranks CANDIDATES by latency each time it comes up.
+      SERVER: newyork+dc+chicago+auto
+      CANDIDATES: newyork,dc,chicago,montreal
+      # Rotate to the next entry every 6 hours while healthy. 0 disables.
+      RECONNECT: 21600
+      LOCAL_SUBNETS: 192.168.50.0/24
+      # Must match the listen ports published below and configured in qBittorrent.
+      FORWARD_PORTS: 46805,48979
+      NOTIFY_URL: ${CS_NOTIFY_URL:-}
+    ports:
+      - 8082:8082            # qbittorrent web UI
+      - 8083:8083            # qbittorrent2 web UI
+      - 46805:46805
+      - 46805:46805/udp
+      - 48979:48979
+      - 48979:48979/udp
+    networks:
+      - media_net
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent
+    container_name: qbittorrent
+    network_mode: service:cryptostorm
+    depends_on:
+      cryptostorm:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      WEBUI_PORT: 8082
+    volumes:
+      - ${DOCKERDIR}/media/tor:/data
+      - ${DOCKERDIR}/qbittorrent/config:/config
+
+  qbittorrent2:
+    image: lscr.io/linuxserver/qbittorrent
+    container_name: qbittorrent2
+    network_mode: service:cryptostorm
+    depends_on:
+      cryptostorm:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      WEBUI_PORT: 8083
+    volumes:
+      - ${DOCKERDIR}/media/tor/2:/data
+      - ${DOCKERDIR}/qbittorrent2/config:/config
+
+networks:
+  media_net:
+    name: media_net

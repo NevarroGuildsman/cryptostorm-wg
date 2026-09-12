@@ -1,0 +1,8 @@
+# Never commit credentials
+.env
+*.key
+*.psk
+wg*.conf
+
+# Local scratch
+/tmp/
