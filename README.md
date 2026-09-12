@@ -14,9 +14,11 @@ WireGuard tunnel up for other containers to share, with:
   is not possible.
 
 Built on a Docker Hardened Image (Alpine) and rebuilt every Monday so base
-packages and the CryptoStorm server list stay current.
+packages stay current. The CryptoStorm server list is vendored in `servers/`
+and refreshed with a script, because cryptostorm.is refuses connections from
+datacenter address ranges such as CI runners.
 
-> **Status: scaffold.** Configuration parsing, the server template pipeline,
+> **Status: scaffold.** Configuration parsing, the vendored server list,
 > CI and the image build work. Tunnel bring-up, kill switch, monitoring and
 > port forwarding are stubs marked `TODO(...)` in `lib/`. Do not run this in
 > front of real traffic yet.
@@ -79,8 +81,8 @@ touching the network.
 
 ### Available servers
 
-The image bundles one template per CryptoStorm server, generated at build
-time from CryptoStorm's own config generator. List them with:
+The image bundles one template per CryptoStorm server from `servers/`. List
+them with:
 
 ```bash
 docker run --rm --entrypoint sh ghcr.io/nevarroguildsman/cryptostorm-wg ls /opt/cryptostorm/servers
@@ -88,6 +90,16 @@ docker run --rm --entrypoint sh ghcr.io/nevarroguildsman/cryptostorm-wg ls /opt/
 
 Mount your own directory over `/opt/cryptostorm/servers` to restrict or
 override the set. Each file is `NAME=`, `ENDPOINT=`, `PUBLIC_KEY=`.
+
+To pick up new servers or rotated keys, run this from a home connection and
+commit the result; the next push rebuilds the image:
+
+```bash
+build/refresh-servers.sh
+```
+
+It parses CryptoStorm's published config generator and reports what was
+added, changed or removed.
 
 ### Port forwarding
 

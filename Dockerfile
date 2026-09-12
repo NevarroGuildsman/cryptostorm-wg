@@ -40,11 +40,11 @@ RUN apk add --no-cache --upgrade \
  # container even when the sysctl is already 1. Compose sets the sysctl instead.
  && sed -i 's/^\([^#].*net\.ipv4\.conf\.all\.src_valid_mark.*\)/#\1/' /usr/bin/wg-quick
 
-# Server templates come from CryptoStorm's own generator at build time, so the
-# weekly rebuild also refreshes the server list and public keys.
-COPY build/generate-templates.sh /tmp/generate-templates.sh
-RUN bash /tmp/generate-templates.sh /opt/cryptostorm/servers \
- && rm -f /tmp/generate-templates.sh
+# Server templates are vendored in servers/ and refreshed with
+# build/refresh-servers.sh from a home connection: cryptostorm.is refuses
+# connections from datacenter ranges, including CI runners.
+COPY servers/ /opt/cryptostorm/servers/
+RUN set -- /opt/cryptostorm/servers/*.conf && test -f "$1"
 
 COPY entrypoint.sh healthcheck.sh /opt/cryptostorm/
 COPY lib/ /opt/cryptostorm/lib/
