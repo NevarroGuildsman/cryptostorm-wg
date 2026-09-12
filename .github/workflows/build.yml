@@ -95,7 +95,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Smoke test
-        run: tests/smoke.sh cryptostorm-wg:ci
+        run: bash tests/smoke.sh cryptostorm-wg:ci
 
       - name: Push
         if: github.event_name != 'pull_request'
