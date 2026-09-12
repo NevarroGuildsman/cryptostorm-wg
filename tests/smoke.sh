@@ -28,8 +28,8 @@ grep -q 'forward ports  : 46805 48979' <<< "$out"
 grep -q 'address        : 10.10.0.2/32' <<< "$out"
 
 echo "== legacy cs- prefix is stripped"
-run -e PRIVATE_KEY=x -e PSK=x -e ADDRESS=10.10.0.2/32 -e SERVER=cs-montreal \
-  | grep -q 'servers        : montreal'
+out=$(run -e PRIVATE_KEY=x -e PSK=x -e ADDRESS=10.10.0.2/32 -e SERVER=cs-montreal)
+grep -q 'servers        : montreal' <<< "$out"
 
 echo "== unknown server is rejected"
 if run -e PRIVATE_KEY=x -e PSK=x -e ADDRESS=10.10.0.2/32 -e SERVER=atlantis >/dev/null 2>&1; then
