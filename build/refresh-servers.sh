@@ -31,6 +31,7 @@ fi
 
 # Endpoint pattern from the generator's template, e.g. ${host}.cstorm.is:443
 endpoint_tpl=$(grep -oE '^Endpoint = .*$' "$work/confgen.sh" | head -1 | sed 's/^Endpoint = //' | tr -d '[:space:]')
+# shellcheck disable=SC2016  # literal ${host} placeholder, substituted below
 [[ -n $endpoint_tpl ]] || endpoint_tpl='${host}.cstorm.is:443'
 
 mkdir -p "$OUT" "$work/new"
