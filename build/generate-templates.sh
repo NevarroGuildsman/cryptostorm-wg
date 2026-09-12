@@ -49,5 +49,5 @@ if (( count == 0 )); then
   exit 1
 fi
 echo "generated $count server templates:"
-ls -1 "$OUT" | sed 's/\.conf$//' | tr '\n' ' '
+for f in "$OUT"/*.conf; do printf '%s ' "$(basename "$f" .conf)"; done
 echo
