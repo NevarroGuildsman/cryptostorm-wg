@@ -33,6 +33,8 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck
       - name: shellcheck
         run: shellcheck -x -s bash entrypoint.sh healthcheck.sh lib/*.sh build/*.sh tests/*.sh
+      - name: Unit tests
+        run: bash tests/unit.sh
 
   build:
     needs: lint

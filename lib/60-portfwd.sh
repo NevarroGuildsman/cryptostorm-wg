@@ -24,6 +24,8 @@
 
 # shellcheck disable=SC2034
 PORTFWD_URL="${PORTFWD_URL:-http://10.31.33.7/fwd}"
+# Seconds between re-checks of the forwards while a tunnel is up.
+PORTFWD_REFRESH="${PORTFWD_REFRESH:-3600}"
 
 portfwd_ensure() {
   local server="$1"

@@ -3,8 +3,10 @@
 # cryptostorm-wg entrypoint.
 #
 # Lifecycle:
-#   config_load      parse and validate the environment, build the SERVERS list
-#   firewall_init    install the kill switch before any tunnel exists
+#   config_load          parse and validate the environment, build SERVERS
+#   net_init             record original resolvers and default route
+#   firewall_init        install the kill switch before any tunnel exists
+#   net_use_tunnel_dns   point resolv.conf at the tunnel resolver for good
 #   loop over SERVERS:
 #     tunnel_session <name>   resolve 'auto', bring up wg0, register forwards,
 #                             monitor until failure or RECONNECT expiry
@@ -24,6 +26,14 @@ for f in "$CS_HOME"/lib/*.sh; do
   source "$f"
 done
 
+on_signal() {
+  trap - TERM INT
+  log_info "shutdown requested; tearing down"
+  tunnel_teardown
+  net_restore_dns
+  exit 0
+}
+
 main() {
   log_banner
   config_load
@@ -34,7 +44,10 @@ main() {
     exit 0
   fi
 
+  trap on_signal TERM INT
+  net_init
   firewall_init
+  net_use_tunnel_dns
 
   local idx=0
   local failures=0
@@ -47,9 +60,10 @@ main() {
       failures=$((failures + 1))
       if (( failures >= total )); then
         notify_send "all-servers-failed" "every configured server failed (${total} tried)"
+        net_restore_dns
         die 30 "every configured server failed (${total} tried); exiting so the restart policy can back off"
       fi
-      sleep 2
+      _sleep 2
     fi
     idx=$(( (idx + 1) % total ))
   done

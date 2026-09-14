@@ -18,10 +18,10 @@ packages stay current. The CryptoStorm server list is vendored in `servers/`
 and refreshed with a script, because cryptostorm.is refuses connections from
 datacenter address ranges such as CI runners.
 
-> **Status: scaffold.** Configuration parsing, the vendored server list,
-> CI and the image build work. Tunnel bring-up, kill switch, monitoring and
-> port forwarding are stubs marked `TODO(...)` in `lib/`. Do not run this in
-> front of real traffic yet.
+> **Status: alpha.** Configuration, kill switch, tunnel bring-up, latency
+> ranking for `auto`, failover, timed rotation and graceful shutdown are
+> implemented but have not yet been exercised on a real host. Port-forward
+> registration is still a stub marked `TODO` in `lib/60-portfwd.sh`.
 
 ## Why
 
@@ -78,6 +78,32 @@ you generate with `wg genkey | tee private | wg pubkey`.
 
 Run the image with `--validate` to parse and print the configuration without
 touching the network.
+
+### How a session works
+
+1. The kill switch goes up first: egress is dropped on every interface except
+   loopback and `wg0`, with allowances for `LOCAL_SUBNETS` and, briefly, the
+   endpoint being dialled. `/etc/resolv.conf` is pointed at `DNS` for the
+   life of the container so nothing in the namespace resolves through
+   Docker's embedded resolver on the host.
+2. For an `auto` entry, every candidate endpoint is pinged five times through
+   a short probe window; hosts with more than 20% loss are dropped and the
+   lowest average wins. Named entries are used as given.
+3. The endpoint is resolved through the container's original resolvers,
+   `wg0.conf` is written, `wg-quick up` runs, and the session waits up to
+   15 seconds for a handshake and then for `PING_TARGET` to answer through
+   the tunnel. Any failure moves on to the next entry.
+4. While connected, the monitor checks handshake age and pings through the
+   tunnel every `CHECK_INTERVAL` seconds. Three consecutive failures trigger
+   failover; an elapsed `RECONNECT` timer triggers a clean rotation.
+5. When every entry has failed in a row the container exits with code 30 so
+   Docker's restart policy can back off. `docker stop` tears the tunnel down
+   cleanly.
+
+**LAN access:** with the tunnel up, the default route belongs to `wg0`.
+Anything on your LAN that should still reach the published ports, or that
+this container should reach directly, must be listed in `LOCAL_SUBNETS`.
+Docker networks the container is attached to work without it.
 
 ### Available servers
 
@@ -144,11 +170,12 @@ without them CI falls back to public Alpine and prints a warning.
 
 ## Roadmap
 
-1. Kill switch (`lib/30-firewall.sh`)
-2. Tunnel session and monitor (`lib/40-tunnel.sh`, `lib/50-monitor.sh`)
-3. Latency ranking for `auto` (`lib/20-servers.sh`)
-4. Port-forward registrar with fixture-based tests (`lib/60-portfwd.sh`)
-5. Optional throughput probe so a congested nearby server loses to a faster
+1. ~~Kill switch~~ (`lib/30-firewall.sh`)
+2. ~~Tunnel session and monitor~~ (`lib/40-tunnel.sh`, `lib/50-monitor.sh`)
+3. ~~Latency ranking for `auto`~~ (`lib/20-servers.sh`)
+4. First real run on a host; fix what reality disagrees with
+5. Port-forward registrar with fixture-based tests (`lib/60-portfwd.sh`)
+6. Optional throughput probe so a congested nearby server loses to a faster
    distant one
 
 ## License

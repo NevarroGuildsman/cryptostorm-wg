@@ -31,6 +31,7 @@ RUN apk add --no-cache --upgrade \
       iptables \
       ip6tables \
       fping \
+      iputils-ping \
       curl \
       jq \
       bind-tools \
