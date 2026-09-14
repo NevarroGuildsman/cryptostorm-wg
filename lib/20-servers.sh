@@ -6,6 +6,7 @@
 
 SERVER_DIR="${SERVER_DIR:-${CS_HOME}/servers}"
 PROBE_COUNT="${PROBE_COUNT:-5}"
+SELECTED_SERVER=""
 
 servers_list() {
   local f
@@ -48,38 +49,46 @@ servers_rank() {
 }
 
 # servers_select
-# Prints the lowest-latency reachable server among CANDIDATE_LIST. Only ever
-# called while the tunnel is down. Logs go to stderr because stdout is the
-# return channel.
+# Sets SELECTED_SERVER to the lowest-latency reachable candidate. Runs in the
+# main shell (not a subshell) so a fatal firewall error exits the container.
+# Only ever called while the tunnel is down.
 servers_select() {
-  local name ip ranked="" avg host i winner=""
+  local name ip ranked="" avg host i
   local -a names=() ips=()
+  SELECTED_SERVER=""
 
-  firewall_allow_probe
+  # Resolution window: DNS to the original resolvers only.
+  firewall_allow_dns || { firewall_revoke_probe; log_error "auto: could not open DNS window"; return 1; }
   for name in "${CANDIDATE_LIST[@]}"; do
     servers_load "$name" || continue
     if ip=$(net_resolve "$ENDPOINT_HOST"); then
       names+=("$name")
       ips+=("$ip")
     else
-      log_warn "auto: cannot resolve ${ENDPOINT_HOST}, skipping ${name}" >&2
+      log_warn "auto: cannot resolve ${ENDPOINT_HOST}, skipping ${name}"
     fi
   done
-  if (( ${#ips[@]} > 0 )); then
-    ranked=$(fping -q -c "$PROBE_COUNT" -p 250 -t 1500 "${ips[@]}" 2>&1 | servers_rank) || true
-  fi
   firewall_revoke_probe
 
-  [[ -n $ranked ]] || { log_warn "auto: no candidate answered pings (firewalled upstream?)" >&2; return 1; }
+  if (( ${#ips[@]} == 0 )); then
+    log_warn "auto: no candidate could be resolved"
+    return 1
+  fi
+
+  # Ranking window: ICMP echo to the candidate addresses only.
+  firewall_allow_icmp "${ips[@]}" || { firewall_revoke_probe; log_error "auto: could not open ICMP window"; return 1; }
+  ranked=$(fping -q -c "$PROBE_COUNT" -p 250 -t 1500 "${ips[@]}" 2>&1 | servers_rank) || true
+  firewall_revoke_probe
+
+  [[ -n $ranked ]] || { log_warn "auto: no candidate answered pings (ICMP filtered upstream?)"; return 1; }
 
   while read -r avg host; do
     for i in "${!ips[@]}"; do
       [[ ${ips[$i]} == "$host" ]] || continue
-      log_info "auto: ${names[$i]} ${avg} ms" >&2
-      [[ -n $winner ]] || winner="${names[$i]}"
+      log_info "auto: ${names[$i]} ${avg} ms"
+      [[ -n $SELECTED_SERVER ]] || SELECTED_SERVER="${names[$i]}"
     done
   done <<< "$ranked"
 
-  [[ -n $winner ]] || return 1
-  echo "$winner"
+  [[ -n $SELECTED_SERVER ]]
 }

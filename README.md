@@ -9,9 +9,9 @@ WireGuard tunnel up for other containers to share, with:
   rotates to the next one while healthy.
 - **Kill switch**: nothing leaves the container except WireGuard traffic to the
   active endpoint and your LAN.
-- **Port-forward registration**: the listen ports you publish are registered
-  on every server the tunnel lands on, with a webhook notification when that
-  is not possible.
+- **Port-forward registration** (planned, not yet implemented): the listen
+  ports you publish will be registered on every server the tunnel lands on,
+  with a webhook notification when that is not possible.
 
 Built on a Docker Hardened Image (Alpine) and rebuilt every Monday so base
 packages stay current. The CryptoStorm server list is vendored in `servers/`
@@ -45,6 +45,7 @@ services:
     cap_add: [NET_ADMIN]
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.disable_ipv6=1   # required unless ip6tables works on your kernel
     environment:
       PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
       PSK: ${WIREGUARD_PRESHARED_KEY}
@@ -81,18 +82,24 @@ touching the network.
 
 ### How a session works
 
-1. The kill switch goes up first: egress is dropped on every interface except
-   loopback and `wg0`, with allowances for `LOCAL_SUBNETS` and, briefly, the
-   endpoint being dialled. `/etc/resolv.conf` is pointed at `DNS` for the
-   life of the container so nothing in the namespace resolves through
-   Docker's embedded resolver on the host.
-2. For an `auto` entry, every candidate endpoint is pinged five times through
-   a short probe window; hosts with more than 20% loss are dropped and the
-   lowest average wins. Named entries are used as given.
-3. The endpoint is resolved through the container's original resolvers,
-   `wg0.conf` is written, `wg-quick up` runs, and the session waits up to
-   15 seconds for a handshake and then for `PING_TARGET` to answer through
-   the tunnel. Any failure moves on to the next entry.
+1. The kill switch goes up first and any failure installing it stops the
+   container. Egress is dropped on every interface except loopback and
+   `wg0`, with allowances for `LOCAL_SUBNETS` and the endpoint being dialled.
+   Established traffic on the uplink is accepted only in the reply
+   direction, so a flow opened during a probe window cannot continue after
+   it closes. Docker's embedded resolver on loopback is blocked outside the
+   probe window, since it would forward queries from the host outside the
+   tunnel. `/etc/resolv.conf` is pointed at `DNS` for the life of the
+   container and never restored. IPv6 is denied with ip6tables, or the
+   container refuses to start unless the disable sysctl is set.
+2. For an `auto` entry, candidates are resolved through the original
+   resolvers in a DNS-only window, then pinged five times in an ICMP window
+   limited to those addresses. Hosts with more than 20% loss are dropped and
+   the lowest average wins. Named entries are used as given.
+3. The endpoint is resolved the same way, `wg0.conf` is written, `wg-quick
+   up` runs, and the session waits up to 15 seconds for a handshake and then
+   for `PING_TARGET` to answer through the tunnel. Each step is checked and
+   any failure tears down and moves on to the next entry.
 4. While connected, the monitor checks handshake age and pings through the
    tunnel every `CHECK_INTERVAL` seconds. Three consecutive failures trigger
    failover; an elapsed `RECONNECT` timer triggers a clean rotation.
@@ -104,6 +111,10 @@ touching the network.
 Anything on your LAN that should still reach the published ports, or that
 this container should reach directly, must be listed in `LOCAL_SUBNETS`.
 Docker networks the container is attached to work without it.
+
+**Name resolution:** containers that share this network namespace cannot
+resolve other containers by name, because that goes through Docker's blocked
+embedded resolver. Use IP addresses or reach them from the other direction.
 
 ### Available servers
 
@@ -127,13 +138,14 @@ build/refresh-servers.sh
 It parses CryptoStorm's published config generator and reports what was
 added, changed or removed.
 
-### Port forwarding
+### Port forwarding (planned)
 
-CryptoStorm forwards are requested from inside the tunnel through a web form,
-are isolated per server, and for WireGuard persist until removed or your token
-expires. The registrar therefore runs on every connect and is idempotent.
-A container cannot read its own compose `ports:` block, so list the same
-ports in `FORWARD_PORTS`.
+Not implemented yet: `FORWARD_PORTS` is validated and logged but nothing is
+registered. The design: CryptoStorm forwards are requested from inside the
+tunnel through a web form, are isolated per server, and for WireGuard persist
+until removed or your token expires. The registrar will therefore run on
+every connect and be idempotent. A container cannot read its own compose
+`ports:` block, so the same ports go in `FORWARD_PORTS`.
 
 ### Notifications
 

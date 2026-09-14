@@ -26,11 +26,13 @@ for f in "$CS_HOME"/lib/*.sh; do
   source "$f"
 done
 
+# The kill switch and the tunnel-DNS resolv.conf are left in place on exit:
+# containers sharing this network namespace may keep running, and they must
+# stay leak-free rather than regain a working uplink.
 on_signal() {
   trap - TERM INT
-  log_info "shutdown requested; tearing down"
+  log_info "shutdown requested; tearing down the tunnel (kill switch stays)"
   tunnel_teardown
-  net_restore_dns
   exit 0
 }
 
@@ -60,7 +62,6 @@ main() {
       failures=$((failures + 1))
       if (( failures >= total )); then
         notify_send "all-servers-failed" "every configured server failed (${total} tried)"
-        net_restore_dns
         die 30 "every configured server failed (${total} tried); exiting so the restart policy can back off"
       fi
       _sleep 2

@@ -6,6 +6,10 @@
 #
 # Returns 0 when the monitor asked for a timed rotation (RECONNECT expired),
 # non-zero when the server failed at any stage. Always tears down on exit.
+#
+# This function is called from an `if`, which suspends `set -e` for
+# everything it runs, so every step that matters is checked explicitly.
+# Firewall changes that must not fail are fatal inside the firewall module.
 
 WG_IFACE="${WG_IFACE:-wg0}"
 WG_CONF_DIR="${WG_CONF_DIR:-/etc/wireguard}"
@@ -15,20 +19,35 @@ tunnel_session() {
   local name="$1" ip out rc
 
   if [[ $name == "auto" ]]; then
-    name=$(servers_select) || { log_warn "auto: no server could be selected"; return 1; }
+    servers_select || { log_warn "auto: no server could be selected"; return 1; }
+    name="$SELECTED_SERVER"
     log_info "auto: selected ${name}"
   fi
   servers_load "$name" || { log_error "server template for '${name}' vanished"; return 1; }
 
-  firewall_allow_probe
-  ip=$(net_resolve "$ENDPOINT_HOST") || true
+  # Resolution window, closed before anything else happens. Closing is fatal
+  # on failure inside firewall_revoke_probe.
+  ip=""
+  if firewall_allow_dns; then
+    ip=$(net_resolve "$ENDPOINT_HOST") || true
+  else
+    log_error "[${name}] could not open DNS window"
+  fi
   firewall_revoke_probe
   [[ -n $ip ]] || { log_warn "[${name}] cannot resolve ${ENDPOINT_HOST}"; return 1; }
 
-  firewall_allow_endpoint "$ip" "$ENDPOINT_PORT"
-  tunnel_write_config "$ip"
-  log_info "[${name}] connecting to ${ENDPOINT_HOST} (${ip}:${ENDPOINT_PORT})"
+  if ! firewall_allow_endpoint "$ip" "$ENDPOINT_PORT"; then
+    log_error "[${name}] could not allow endpoint ${ip}:${ENDPOINT_PORT} through the kill switch"
+    tunnel_teardown
+    return 1
+  fi
+  if ! tunnel_write_config "$ip"; then
+    log_error "[${name}] could not write ${WG_CONF_DIR}/${WG_IFACE}.conf"
+    tunnel_teardown
+    return 1
+  fi
 
+  log_info "[${name}] connecting to ${ENDPOINT_HOST} (${ip}:${ENDPOINT_PORT})"
   if ! out=$(wg-quick up "$WG_IFACE" 2>&1); then
     log_error "[${name}] wg-quick up failed: ${out//$'\n'/ | }"
     tunnel_teardown
@@ -46,7 +65,7 @@ tunnel_session() {
   fi
 
   log_info "[${name}] connected"
-  tunnel_status_write "$name" "$ip"
+  tunnel_status_write "$name" "$ip" || log_warn "[${name}] could not write status file"
   notify_send connected "connected to ${name}" "server=${name}" "endpoint=${ip}:${ENDPOINT_PORT}"
   portfwd_ensure "$name"
 
@@ -60,7 +79,7 @@ tunnel_session() {
 # is managed by net_use_tunnel_dns for the whole container lifetime instead.
 tunnel_write_config() {
   local endpoint_ip="$1"
-  mkdir -p "$WG_CONF_DIR"
+  mkdir -p "$WG_CONF_DIR" || return 1
   (
     umask 077
     cat > "${WG_CONF_DIR}/${WG_IFACE}.conf" <<CONF
@@ -75,7 +94,8 @@ Endpoint = ${endpoint_ip}:${ENDPOINT_PORT}
 AllowedIPs = ${ALLOWED_IPS}
 PersistentKeepalive = 25
 CONF
-  )
+  ) || return 1
+  [[ -s "${WG_CONF_DIR}/${WG_IFACE}.conf" ]]
 }
 
 # tunnel_wait_handshake [seconds]
@@ -106,6 +126,8 @@ tunnel_status_write() {
 
 # tunnel_teardown
 # Idempotent. Safe to call when nothing is up (also used by the signal trap).
+# Revoking the endpoint allowance is fatal on failure inside the firewall
+# module; the kill switch itself is never removed.
 tunnel_teardown() {
   if ip link show "$WG_IFACE" >/dev/null 2>&1; then
     wg-quick down "$WG_IFACE" >/dev/null 2>&1 || ip link del "$WG_IFACE" 2>/dev/null || true

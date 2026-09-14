@@ -47,10 +47,11 @@ net_resolve() {
 }
 
 # net_use_tunnel_dns
-# Points /etc/resolv.conf at DNS (comma list). Every process in this network
-# namespace, including containers that join it, then resolves through the
-# tunnel instead of Docker's embedded resolver, which would otherwise forward
-# queries from the host outside the tunnel.
+# Points /etc/resolv.conf at DNS (comma list) for the rest of the container's
+# life. This is a convenience for well-behaved processes; the firewall is what
+# actually stops queries reaching Docker's embedded resolver, which would
+# forward them from the host outside the tunnel. The original file is never
+# restored: containers that share this namespace may outlive this process.
 net_use_tunnel_dns() {
   local -a list
   local n out=""
@@ -64,11 +65,6 @@ net_use_tunnel_dns() {
   else
     log_warn "could not write /etc/resolv.conf; DNS may bypass the tunnel"
   fi
-}
-
-net_restore_dns() {
-  [[ -f $NET_RESOLV_BACKUP ]] && cat "$NET_RESOLV_BACKUP" > /etc/resolv.conf 2>/dev/null
-  return 0
 }
 
 # _sleep <seconds>
