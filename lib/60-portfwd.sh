@@ -8,9 +8,11 @@
 #       NO_ARGS_RECEIVED
 #       Your current port forwardings:
 #       146.70.154.70:46805 -> 10.10.199.104:46805
-#   POST port=<n>        enable a forward (30000-65535)
+#   POST port=<n>        enable a forward (30000-65535); replies PORT_ADD_OK
 #   POST delfwd=<n>      delete one forward
 #   POST delallfwd=1     delete every forward on this server
+# The reply text is logged but not relied on: success is confirmed by
+# listing again.
 # Forwards are isolated per server and, for WireGuard, persist until removed
 # or the access token expires, so this routine is idempotent: list, add what
 # is missing, list again to verify.
