@@ -27,6 +27,15 @@ grep -q 'servers        : newyork dc auto' <<< "$out"
 grep -q 'forward ports  : 46805 48979' <<< "$out"
 grep -q 'address        : 10.10.0.2/32' <<< "$out"
 
+echo "== CryptoStorm's 'v4, v6' address form keeps the IPv4 entry"
+out=$(run -e PRIVATE_KEY=x -e PSK=x -e "ADDRESS=10.10.199.104, fd00:10:10::273b" -e SERVER=newyork)
+grep -q 'address        : 10.10.199.104/32' <<< "$out"
+
+echo "== IPv6-only address is rejected"
+if run -e PRIVATE_KEY=x -e PSK=x -e ADDRESS=fd00:10:10::273b -e SERVER=newyork >/dev/null 2>&1; then
+  echo "expected failure for IPv6-only ADDRESS" >&2; exit 1
+fi
+
 echo "== legacy cs- prefix is stripped"
 out=$(run -e PRIVATE_KEY=x -e PSK=x -e ADDRESS=10.10.0.2/32 -e SERVER=cs-montreal)
 grep -q 'servers        : montreal' <<< "$out"

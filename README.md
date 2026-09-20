@@ -65,7 +65,7 @@ you generate with `wg genkey | tee private | wg pubkey`.
 |------------------|------------------|---------|
 | `PRIVATE_KEY`    | required         | WireGuard private key |
 | `PSK`            | required         | Pre-shared key issued by CryptoStorm |
-| `ADDRESS`        | required         | Tunnel address, e.g. `10.10.17.119/32` |
+| `ADDRESS`        | required         | Tunnel address, e.g. `10.10.17.119/32`. CryptoStorm's `10.10.1.2, fd00:10:10::1` form is accepted; the IPv6 entry is ignored because the tunnel is IPv4-only |
 | `SERVER`         | `auto`           | Ordered `+`-joined list, e.g. `newyork+dc+auto`. A legacy `cs-` prefix is accepted. |
 | `CANDIDATES`     | all bundled      | Comma list restricting what `auto` may pick |
 | `RECONNECT`      | `0`              | Seconds before rotating to the next entry while healthy; `0` disables |

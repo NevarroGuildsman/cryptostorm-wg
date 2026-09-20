@@ -42,9 +42,33 @@ config_load() {
   [[ -n ${PRIVATE_KEY:-} ]] || die 10 "PRIVATE_KEY is not set"
   [[ -n ${PSK:-} ]]         || die 10 "PSK is not set"
   [[ -n ${ADDRESS:-} ]]     || die 10 "ADDRESS is not set"
-  [[ $ADDRESS =~ ^10\.10\.[0-9]+\.[0-9]+(/[0-9]+)?$ ]] \
+
+  # ADDRESS may arrive exactly as CryptoStorm issues it: "10.10.1.2, fd00:10:10::1".
+  # The tunnel is IPv4-only (IPv6 egress is denied or disabled), so keep the
+  # IPv4 entry and drop the rest.
+  local -a addrs
+  local a v4=""
+  IFS=',' read -r -a addrs <<< "$ADDRESS"
+  for a in "${addrs[@]}"; do
+    a="${a// /}"
+    [[ -n $a ]] || continue
+    if [[ $a =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$ ]]; then
+      [[ $a == */* ]] || a="${a}/32"
+      if [[ -z $v4 ]]; then
+        v4="$a"
+      else
+        log_warn "ADDRESS: ignoring extra IPv4 entry ${a}"
+      fi
+    elif [[ $a == *:* ]]; then
+      log_info "ADDRESS: ignoring IPv6 entry ${a} (tunnel is IPv4-only)"
+    else
+      die 10 "ADDRESS entry '${a}' is not an IP address"
+    fi
+  done
+  [[ -n $v4 ]] || die 10 "ADDRESS '${ADDRESS}' contains no IPv4 address"
+  ADDRESS="$v4"
+  [[ $ADDRESS == 10.10.* ]] \
     || log_warn "ADDRESS '${ADDRESS}' is outside CryptoStorm's usual 10.10.0.0/16 WireGuard range"
-  [[ $ADDRESS == */* ]] || ADDRESS="${ADDRESS}/32"
 
   [[ $RECONNECT =~ ^[0-9]+$ ]]      || die 10 "RECONNECT must be a whole number of seconds"
   [[ $CHECK_INTERVAL =~ ^[0-9]+$ ]] || die 10 "CHECK_INTERVAL must be a whole number of seconds"
