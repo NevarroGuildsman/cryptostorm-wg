@@ -9,19 +9,18 @@ WireGuard tunnel up for other containers to share, with:
   rotates to the next one while healthy.
 - **Kill switch**: nothing leaves the container except WireGuard traffic to the
   active endpoint and your LAN.
-- **Port-forward registration** (planned, not yet implemented): the listen
-  ports you publish will be registered on every server the tunnel lands on,
-  with a webhook notification when that is not possible.
+- **Port-forward registration**: the listen ports you publish are registered
+  on every server the tunnel lands on, re-checked hourly, with a webhook
+  notification when that is not possible.
 
 Built on a Docker Hardened Image (Alpine) and rebuilt every Monday so base
 packages stay current. The CryptoStorm server list is vendored in `servers/`
 and refreshed with a script, because cryptostorm.is refuses connections from
 datacenter address ranges such as CI runners.
 
-> **Status: alpha.** Configuration, kill switch, tunnel bring-up, latency
-> ranking for `auto`, failover, timed rotation and graceful shutdown are
-> implemented but have not yet been exercised on a real host. Port-forward
-> registration is still a stub marked `TODO` in `lib/60-portfwd.sh`.
+> **Status: beta.** Kill switch, tunnel bring-up and latency ranking are
+> confirmed working on a real host. Failover, timed rotation and port-forward
+> registration are implemented but have had less real-world exercise.
 
 ## Why
 
@@ -138,14 +137,24 @@ build/refresh-servers.sh
 It parses CryptoStorm's published config generator and reports what was
 added, changed or removed.
 
-### Port forwarding (planned)
+### Port forwarding
 
-Not implemented yet: `FORWARD_PORTS` is validated and logged but nothing is
-registered. The design: CryptoStorm forwards are requested from inside the
-tunnel through a web form, are isolated per server, and for WireGuard persist
-until removed or your token expires. The registrar will therefore run on
-every connect and be idempotent. A container cannot read its own compose
-`ports:` block, so the same ports go in `FORWARD_PORTS`.
+CryptoStorm forwards are requested from inside the tunnel at an internal
+address, are isolated per server, and for WireGuard persist until removed or
+your token expires. On every connect, and hourly after that, the registrar
+lists the forwards on the current server, requests any from `FORWARD_PORTS`
+that are missing, and lists again to verify. Failures are logged and sent to
+`NOTIFY_URL` as a `portfwd-failed` event; they never bring the tunnel down.
+A container cannot read its own compose `ports:` block, so the same ports go
+in `FORWARD_PORTS`.
+
+### Client settings
+
+Point your torrent client at the tunnel, not at an interface name inherited
+from an earlier setup. In qBittorrent that is Tools, Options, Advanced:
+set "Network interface" to `wg0` and "Optional IP address to bind to" to the
+tunnel address. A stale interface name there shows as "Disconnected" in the
+status bar because the client cannot open a listening socket at all.
 
 ### Notifications
 
@@ -185,9 +194,10 @@ without them CI falls back to public Alpine and prints a warning.
 1. ~~Kill switch~~ (`lib/30-firewall.sh`)
 2. ~~Tunnel session and monitor~~ (`lib/40-tunnel.sh`, `lib/50-monitor.sh`)
 3. ~~Latency ranking for `auto`~~ (`lib/20-servers.sh`)
-4. First real run on a host; fix what reality disagrees with
-5. Port-forward registrar with fixture-based tests (`lib/60-portfwd.sh`)
-6. Optional throughput probe so a congested nearby server loses to a faster
+4. ~~First real run on a host~~
+5. ~~Port-forward registrar~~ (`lib/60-portfwd.sh`)
+6. Dual-stack: IPv6 inside the tunnel when the namespace has IPv6 enabled
+7. Optional throughput probe so a congested nearby server loses to a faster
    distant one
 
 ## License

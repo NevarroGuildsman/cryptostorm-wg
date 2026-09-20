@@ -27,4 +27,20 @@ echo "ok servers_rank"
 [[ -z $(servers_rank < /dev/null) ]] || fail "servers_rank should print nothing for empty input"
 echo "ok servers_rank empty"
 
+# portfwd_parse / portfwd_exit_ip: plain-text listing from 10.31.33.7/fwd
+listing='NO_ARGS_RECEIVED
+Your current port forwardings:
+146.70.154.70:46805 -> 10.10.199.104:46805
+146.70.154.70:48979 -> 10.10.199.104:48979'
+actual=$(portfwd_parse <<< "$listing")
+[[ $actual == $'46805\n48979' ]] || fail "portfwd_parse produced:"$'\n'"$actual"
+echo "ok portfwd_parse"
+[[ $(portfwd_exit_ip <<< "$listing") == "146.70.154.70" ]] || fail "portfwd_exit_ip"
+echo "ok portfwd_exit_ip"
+
+empty='NO_ARGS_RECEIVED
+Your current port forwardings:'
+[[ -z $(portfwd_parse <<< "$empty") ]] || fail "portfwd_parse should print nothing when no forwards exist"
+echo "ok portfwd_parse empty"
+
 echo "unit tests passed"
